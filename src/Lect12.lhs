@@ -49,6 +49,10 @@ Search is one of the most common programming tasks you'll perform. It's
 useful to recognize some common search patterns and techniques, and understand
 how they might be applied.
 
+We'll explore a few problems that are natural candidates for search-based
+solutions, starting with maze-solving. As a fun programming exercise, we'll
+start by considering how to generate random mazes of arbitrary size.
+
 
 Maze-building
 -------------
@@ -67,7 +71,6 @@ data Maze = Maze {
               mazePath :: MazePath,
               mazeAdjMap :: Map MazeLoc [MazeLoc] 
             } deriving (Eq)
-
 \end{code}
 
 
@@ -115,8 +118,11 @@ adjLocs (w, h) (x, y) =
 -- connects two adjacent locations in the maze by inserting them into
 -- each others' lists in the adjacency map
 openWall :: MazeLoc -> MazeLoc -> Maze -> Maze
-openWall l1 l2 mz@(Maze _ _ cmap) = undefined
+openWall l1 l2 mz@(Maze _ _ cmap) = 
+  mz { mazeAdjMap = insertWith (++) l2 [l1] $ insertWith (++) l1 [l2] cmap }
 \end{code}
+
+
 
 
 -- Random values and State
@@ -129,9 +135,15 @@ in the range [0,N)?
 
     randomRange :: Int -> Int
 
----
 
-<Discuss> PRNGs requiring state and "seed" values
+This can't possibly work! Purity requires that a function always return the same
+result for given input(s). So there's just really no way of writing this
+function. 
+
+The only way for a function to return "random" values is by being stateful ---
+i.e., by being passed some state to use as the basis for returning a random
+number alongside an updated state. This is the basis for pseudo-random number
+generators (PRNGs). In this context, we often to the state as a "seed" value.
 
 A simple way of updating seed values is the Lehmer RNG algorithm:
 
@@ -141,17 +153,21 @@ where `p` is a prime number (we won't worry about how to pick `a`).
 
 ---
 
-Let's write a version of `randomRange` that works on this principle:
+Here's a version of `randomRange` that works on this principle. We define the
+`Seed` type to differentiate the seed value from the range. We rely on `mod` to
+help us compute a pseudo-random value based on the input seed that is in the
+specified range, too.
 
 \begin{code}
 type Seed = Int
 
 randomRange :: Int -> Seed -> (Int, Seed)
-randomRange max seed = undefined
+randomRange max seed = (seed `mod` max, 7*seed `mod` 101)
 \end{code}
 
 
-We can chain together calls to generate a series of random values:
+To generate a series of random numbers, we need to chain together calls to
+`randomRange`, passing along the new seeds from call to call:
 
 \begin{code}
 fourRands :: Int -> Seed -> [Int]
@@ -163,15 +179,28 @@ fourRands max s0 = let (v1, s1) = randomRange max s0
 \end{code}
 
 
-Let's use the state monad instead:
+This is a natural fit for the State monad. We can use a State monad to carry
+along and update the seed in order to help us extract new random values when 
+needed:
 
 \begin{code}
 getRandomRange :: Int -> State Seed Int
-getRandomRange max = undefined
+getRandomRange max = do s <- get
+                        let (x, s') = randomRange max s
+                        put s'
+                        return x
 
 
 nRands :: Int -> Int -> State Seed [Int]
-nRands = undefined
+nRands 0 _ = return []
+nRands n max = do r <- getRandomRange max
+                  rs <- nRands (n-1) max
+                  return $ r:rs
+
+nRands' n max = (:) <$> getRandomRange max <*> nRands (n-1) max
+
+-- or, using the higher order applicative function replicateM
+nRands'' n max = replicateM n $ getRandomRange max
 \end{code}
 
 
@@ -204,21 +233,30 @@ some relevant classes, instances, and functions:
 
 
 Let's write some functions that allow us to generate random values and shuffle
-lists using a StdGen pulled out of a State monad:
+lists using a StdGen --- the PRNG state --- pulled out of a State monad:
 
 \begin{code}
 getRandom :: (Int, Int) -> State StdGen Int
-getRandom range = undefined
+getRandom range = do gen <- get
+                     let (val, gen') = randomR range gen
+                     put gen'
+                     return val
 
 getShuffled :: [a] -> State StdGen [a]
-getShuffled l = undefined
+getShuffled l = do gen <- get
+                   let (g1, g2) = split gen
+                       l' = shuffle' l (length l) g1
+                   put g2
+                   return l'
 \end{code}
 
 ---
 
 And now we're ready to implement a random maze generator!
 
-<Discuss> "Recursive backtracking" algorithm:
+We're going to use a maze generation algorithm known as *reursive backtracking*,
+which starts with a fully "disconnected" maze (i.e., no cells reachable from any
+other), and proceeds as follows:
 
   1. Pick a starting cell to visit -- this is the "current" cell.
 
@@ -234,12 +272,27 @@ And now we're ready to implement a random maze generator!
 \begin{code}
 -- attempt 1: create a maze with a single "tunnel"
 genMazeSimple :: MazeDims -> State StdGen Maze
-genMazeSimple dims = undefined
+genMazeSimple dims = gen (Maze dims [] empty) (1, 1)
+  where gen :: Maze -> MazeLoc -> State StdGen Maze
+        gen mz@(Maze _ _ cmap) currLoc = do
+          nLocs <- getShuffled $ adjLocs dims currLoc
+          let (nLoc:_) = nLocs
+          if nLoc `member` cmap 
+          then return mz
+          else gen (openWall currLoc nLoc mz) nLoc
 
 
 -- maze generator using recursive backtracking
 genMaze :: MazeDims -> State StdGen Maze
-genMaze dims = undefined
+genMaze dims = gen (Maze dims [] empty) (1, 1)
+  where gen :: Maze -> MazeLoc -> State StdGen Maze
+        gen mz currLoc = do
+          nLocs <- getShuffled $ adjLocs dims currLoc
+          foldM (\mz'@(Maze _ _ cmap) nLoc ->
+                  if nLoc `member` cmap
+                  then return mz' 
+                  else gen (openWall currLoc nLoc mz') nLoc)
+                mz nLocs
 
 
 -- convenience function for creating a random maze from the global RNG
@@ -263,7 +316,7 @@ A search strategy should avoid re-visiting nodes, and address the following:
     existing, as yet unvisited nodes?
 
 
-<Discuss> Search helper functions (nodes of type `a`):
+Searching through nodes of type `a` relies on these functions:
 
   goal :: a -> Bool
   
@@ -286,9 +339,16 @@ search :: (Eq a, Show a) =>
           -> ([a] -> [a] -> [a])
           -> [a] -> [a] 
           -> Maybe a
-search goal adj comb unvisited visited = undefined
+search goal adj comb unvisited visited
+  | null unvisited = Nothing
+  | goal (head unvisited) = Just (head unvisited)
+  | otherwise = let (n:ns) = unvisited
+                in debug n $ 
+                   search goal adj comb
+                          (comb (removeDups (adj n)) ns)
+                          (n:visited)
+  where removeDups = filter (not . (`elem` (unvisited ++ visited)))
 
--- convenience function for tracing search execution
 debug :: Show a => a -> b -> b
 debug x y = unsafePerformIO clearScreen `seq`
             unsafePerformIO (setCursorPosition 0 0) `seq`
@@ -300,16 +360,20 @@ debug x y = unsafePerformIO clearScreen `seq`
 
 -- Uninformed search
 
-<Discuss> Uninformed / "brute force" search strategies
+Uninformed seach strategies (aka "brute force" strategies) are goal-agnostic.
+I.e., they are uninformed by the search domain. They may, however, impose an
+order on when nodes are visited based on other factors.
 
-<Discuss> Depth-first (LIFO) & Breadth-first search (FIFO)
+Depth-first search considers newly discovered nodes before previously unvisited
+ones, while breadth-first search considers nodes in FIFO order of discovery.
+These are easy to express in terms of our higher-order search pattern.
 
 \begin{code}
 dfs :: (Eq a, Show a) => (a -> Bool) -> (a -> [a]) -> a -> Maybe a
-dfs goal succ start = undefined
+dfs goal succ start = search goal succ (++) [start] []
 
 bfs :: (Eq a, Show a) => (a -> Bool) -> (a -> [a]) -> a -> Maybe a
-bfs goal succ start = undefined
+bfs goal succ start = search goal succ (flip (++)) [start] []
 \end{code}
 
 
@@ -317,7 +381,12 @@ Let's solve our maze using uninformed search:
 
 \begin{code}
 solveMaze :: Maze -> Maybe Maze
-solveMaze mz@(Maze (w,h) _ _) = undefined
+solveMaze mz@(Maze (w,h) _ _) =
+  let entry = (1, 1) -- enter at top left
+      exit = (w, h)  -- exit at bottom right
+  in dfs ((== exit) . head . mazePath)
+         nextPaths
+         (mz { mazePath = [entry]})
 
 -- given a maze with a non-empty path, return a list of mazes, each of
 -- which extends the path by one location (based on the adjacency map)
@@ -356,7 +425,8 @@ bestFirstSearch :: (Eq a, Show a, Ord b) =>
                    -> (a -> [a])
                    -> (a -> b) 
                    -> a -> Maybe a
-bestFirstSearch goal succ cost start = undefined
+bestFirstSearch goal succ cost start = search goal succ comb [start] []
+  where comb new old = sortOn cost (new ++ old)
 \end{code}
 
 
@@ -380,23 +450,33 @@ maze thus far. Let's write it:
 
 \begin{code}
 bfsSolveMaze :: Maze -> Maybe Maze
-bfsSolveMaze = undefined
+bfsSolveMaze = solveMaze' (length . mazePath)
 \end{code}
+
+Note its behavioral resemblance to breadth-first search!
 
 
 -- Informed Search
 
-<Discuss> Informed search strategies
+Informed search strategies rely on domain knowledge -- typically related to the
+search goal -- to decide which node to visit next. 
+
+In our maze solver, we can rank paths based on whether they appear to get us
+closer to the exit. Since we don't know the actual route to the exit (that's
+what we're searching for!) we can only guess at it.
 
 Let's implement a maze solver, again based on best-first search, that uses an
 estimate of the remaining distance to the exit as a cost function:
 
 \begin{code}
 bfsSolveMaze' :: Maze -> Maybe Maze
-bfsSolveMaze' mz@(Maze (w,h) _ _) = undefined
+bfsSolveMaze' mz@(Maze (w,h) _ _) = solveMaze' cost mz
+  where cost mz'@(Maze _ p@((x,y):_) _) = abs (w-x) + abs (y-h)
 \end{code}
 
-The strategy above is *greedy*. How would it perform on the following maze?
+The strategy above is *greedy*. It chooses the next option based on immediate
+benefit without necessarily considering the big picture. Consider how it
+performs on the following maze:
 
     +---+---+---+---+---+---+---+---+---+---+
     |Entry          |                       |
@@ -432,20 +512,32 @@ testMaze2 = build locs $ Maze (10,7) [] empty
 
 ---
 
-<Discuss> A* search
+A better strategy is to factor both the distance traversed so far *and* the
+estimated remaining distance into the cost function. We call a best-first search
+using such a cost function A* (read "A-star") search.
+
+When our estimate of the remaining distance never overshoots the actual cost of
+reaching the goal, A* search is guaranteed to return the lowest-cost path. We
+call such an estimation function an *admissible heuristic*.
 
 Let's implement an A* search solver for our maze:
 
 \begin{code}
 aStarSolveMaze :: Maze -> Maybe Maze
-aStarSolveMaze mz@(Maze (w,h) _ _) = undefined
+aStarSolveMaze mz@(Maze (w,h) _ _) = solveMaze' cost mz
+  where cost mz'@(Maze _ p@((x,y):_) _) = abs (w-x) + abs (y-h) + length p
 \end{code}
 
 
 Adversarial search
 ------------------
 
-<Discuss> Adversarial search
+There are problems where it doesn't make sense to apply the same search strategy
+at each step. For example, consider moves in a two-person adversarial game as
+nodes in a search space, with the search goal of identifying how to get to the
+winning move. It makes no sense to assume that both players are going to carry
+out strategies that helps only one of the players win!
+
 
 -- Tic-Tac-Toe
 
@@ -531,7 +623,10 @@ playInteractive = play X emptyBoard
 
 ---
 
-<Discuss> Game trees
+In order to model the game as a search problem, we can create a "game tree",
+where each node in the tree represents the state of the board, and its children
+represent the different board states resulting from playing a valid move on the
+parent's board. Let's define the needed functions:
 
 \begin{code}
 gameTree :: Board -> Tree Board
@@ -554,7 +649,9 @@ printTree = putStrLn . drawTree . fmap show . gameTree
 \end{code}
 
 
-<Discuss> Nodes and scoring
+Next, to help us compare board states corresponding to nodes in our search
+space, we can compute and attach scores to board values. Here's a data type to
+make doing that easier:
 
 \begin{code}
 data Scored a = Scored { score :: Int, scoredVal :: a }
@@ -570,11 +667,16 @@ instance Show a => Show (Scored a) where
 \end{code}
 
 
-Let's write a function to score a board from the perspective of a given player:
+Let's write a function to score a board from the perspective of a given player.
+Instead of trying to predict whether a game in progress will lead to a win or
+loss (that's the job of our search algorithm!), we only assign non-zero scores
+to boards that have already been decided:
 
 \begin{code}
 scoreBoard :: Piece -> Board -> Scored Board
-scoreBoard p b = undefined
+scoreBoard p b | wins p b = Scored 100 b
+               | wins (opponent p) b = Scored (-100) b
+               | otherwise = Scored 0 b
 
 -- convenience function for printing a scored tree
 -- e.g., printScoredTree $ playMoves [1,5,9,2,8,7]
@@ -591,7 +693,14 @@ makes sense to only compute scores during our search when we reach a leaf node.
 Finally, we can frame the search problem: what is the best possible outcome for
 a given player and a starting board, and what move should we take to get there?
 
-<Discuss> Minimax algorithm 
+The critical observation is that our scores are computed from the point of view
+of a single player, while there are two opposing players in the game. Given
+players X and O with the game tree being scored from X's perspective, X will
+strive to maximize the final score during their turn, while O will strive to
+minimize the score in the following turn; this will alternate throughout our
+search. 
+
+The minimax algorithm carries out this logic. 
 
 \begin{code}
 minimax :: (a -> Scored a) -> Tree a -> Scored a
@@ -603,7 +712,8 @@ minimax scorefn (Node _ ns) = maximize ns
 \end{code}
 
 
-The above version only locates the final board. This next version propagates
+However, the above version only locates the final board, and fails to give us
+the next best move along the path to that board. This next version propagates
 the score of the final board back up the tree so we can select the next move:
 
 \begin{code}
@@ -614,7 +724,6 @@ minimax' scorefn (Node _ ns) = maximize ns
         eval _ (Node x []) = scorefn x
         eval f (Node x ns) = let Scored s _ = f ns in Scored s x
 \end{code}
-
 
 And now we can write a tic-tac-toe AI driven by our search implementation:
 
@@ -641,7 +750,10 @@ playAI = play X emptyBoard
 
 ---
 
-<Discuss> Alpha-Beta pruning
+In practice, there are subtrees that we needn't evaluate when we've already
+discovered alternate moves that cannot be improved upon (by either player).
+"Alpha-beta pruning" is a method for reducing the number of nodes we need to
+consider in a minimax search:
 
 \begin{code}
 instance Bounded (Scored a) where

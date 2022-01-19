@@ -96,21 +96,23 @@ Functions that construct lists typically:
 
 
 > replicate' :: Int -> a -> [a]
-> replicate' = undefined
+> replicate' 0 _ = []
+> replicate' n x = x : replicate' (n-1) x
 >
 > enumFromTo' :: (Ord a, Enum a) => a -> a -> [a]
-> enumFromTo' = undefined
+> enumFromTo' x y | x <= y    = x : enumFromTo' (succ x) y
+>                 | otherwise = []
 >
 > -- and now for some infinite lists
 >
 > ones :: [Int]
-> ones = undefined
+> ones = 1 : ones
 > 
 > repeat' :: a -> [a]
-> repeat' = undefined
+> repeat' x = x : repeat' x
 >
 > enumFrom' :: Enum a => a -> [a]
-> enumFrom' = undefined
+> enumFrom' x = x : enumFrom' (succ x)
 
 Note: to limit the number of values drawn from an infinite list, we can use
       `take` (we'll implement it later)
@@ -123,7 +125,7 @@ Instead of constructing lists with `:`, Haskell gives us syntactic shortcuts:
 
 E.g., for simple itemized lists, [...]
 
-    [1,2,3,4,5,6,7,8,9,10]   ==  1:2:3:4:5:6:7:8:9:10:[] 
+    [1,2,3,4,5,6,7,8,9,10]   ==  1:2:3:4:5:6:7:8:9:10:[]
 
     [[1, 2, 3], [4, 5, 6]]   ==  (1:2:3:[]) : (4:5:6:[]) : []
 
@@ -185,13 +187,13 @@ E.g.,
 >                                      a^2 + b^2 == c^2]
 >
 > factors :: Integral a => a -> [a]
-> factors = undefined
+> factors n = [f | f <- [1..n], n `mod` f == 0]
 >
 > cartesianProduct :: [a] -> [b] -> [(a,b)]
-> cartesianProduct = undefined
+> cartesianProduct xs ys = [(x,y) | x <- xs, y <- ys]
 >
 > concat' :: [[a]] -> [a]
-> concat' = undefined
+> concat' ls = [x | l <- ls, x <- l]
 
 
 Common list functions
@@ -292,35 +294,51 @@ E.g., to compute the length of a list:
 E.g., more built-in functions:
 
 > last' :: [a] -> a
-> last' = undefined
+> last' (x:[]) = x
+> last' (_:xs) = last' xs
 >
 >
 > (+++) :: [a] -> [a] -> [a]
-> (+++) = undefined
+> [] +++ ys = ys
+> (x:xs) +++ ys = x : xs +++ ys
 >
 >
 > (!!!) :: [a] -> Int -> a -- the ! in its name is an implicit warning as to its inefficiency!
-> (!!!) = undefined
+> (x:_) !!! 0 = x
+> (_:xs) !!! n = xs !!! (n-1)
 >
 >
 > reverse' :: [a] -> [a]
-> reverse' = undefined
+> reverse' [] = []
+> reverse' (x:xs) = reverse' xs +++ [x] -- is there a more efficient way?
 >
 >
 > take' :: Int -> [a] -> [a]
-> take' = undefined
+> take' 0 _ = []
+> take' _ [] = []
+> take' n (x:xs) = x : take' (n-1) xs
 >
 >
 > splitAt' :: Int -> [a] -> ([a], [a])
-> splitAt' = undefined
+> splitAt' _ [] = ([],[])
+> splitAt' 0 xs = ([], xs)
+> splitAt' n (x:xs) = let (ys,zs) = splitAt' (n-1) xs
+>                     in (x:ys, zs)
 >
 >
 > break' :: (a -> Bool) -> [a] -> ([a], [a])
-> break' = undefined
+> break' _ [] = ([],[])
+> break' p l@(x:xs) | p x = ([], l)
+>                   | otherwise = let (ys, zs) = break' p xs
+>                                 in (x:ys, zs)
 >
 >
 > words' :: String -> [String]
-> words' = undefined
+> words' [] = []
+> words' l@(c:cs) | isSpace c = words' cs
+>                 | otherwise = let (w, ws) = break' isSpace l
+>                               in w : words' ws
+
 
 E.g., the Caesar cipher is an encryption scheme that takes a plain text input
 string P and a shift value N, and produces an encrypted version of the string
@@ -338,4 +356,8 @@ determine if a character is a letter. We'll convert all letters to uppercase
 for simplicity with `toUpper`.
 
 > caesar :: Int -> String -> String
-> caesar = undefined
+> caesar _ [] = []
+> caesar n (x:xs) = (if isLetter x then encrypt x else x) : caesar n xs
+>   where encrypt x = n2l ((l2n x + n) `mod` 26)
+>         l2n c = ord (toUpper c) - ord 'A'
+>         n2l n = chr (n + ord 'A')

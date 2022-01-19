@@ -16,7 +16,6 @@ Agenda:
   - Functors
   - Applicatives
   - Monads
-  - Laws
 
 
 Functors
@@ -38,7 +37,7 @@ constructor.
 We can make a list a Functor, where `fmap` is identical to `map`
 
 > instance Functor [] where
->   fmap = undefined
+>   fmap = map
 
 Note that the implied type of `fmap` in the instance (replacing `f` from the
 class definition with the instance `[]`) is:
@@ -58,7 +57,8 @@ to map the function (2*) over the values in the list.
 Let's define `fmap` for the Maybe type:
 
 > instance Functor Maybe where
->   fmap = undefined
+>   fmap f Nothing = Nothing
+>   fmap f (Just x) = Just (f x)
 
 we can now do:
 
@@ -93,7 +93,8 @@ Let's define `fmap` for a tree:
 > data Tree a = Node a [Tree a] | Leaf a
 >
 > instance Functor Tree where
->   fmap = undefined
+>   fmap f (Leaf x) = Leaf $ f x
+>   fmap f (Node x ts) = Node (f x) $ fmap (fmap f) ts
 
 Here's a `Show` instance that makes it easier to visualize trees and a few trees
 to play with:
@@ -135,7 +136,7 @@ can write a Functor instance for the type `((->) a)` (note that `a` is the first
 / left-hand argument to the type constructor `->`):
 
 > instance Functor ((->) a) where
->   fmap = undefined
+>   fmap = (.)
 
 How should we interpret the following?
 
@@ -143,7 +144,10 @@ How should we interpret the following?
 
 ---
 
-How are functors limited?
+While Functors represent computation contexts, they are quite limited. We cannot
+arbitrarily place new values in Functor contexts, nor can we "combine" separate
+contexts (e.g., one containing a function and another a value). Applicatives
+let us do that.
 
 
 Applicative Functors
@@ -163,10 +167,10 @@ in one Functor to a value in another Functor.
 Let's make `Maybe` an Applicative instance:
 
 > instance Applicative Maybe where
->   pure = undefined
+>   pure = Just
 >
->   (<*>) = undefined
-
+>   Just f <*> Just x = Just $ f x
+>   _ <*> _ = Nothing
 
 Now we can do:
 
@@ -187,35 +191,43 @@ handles it correctly:
 
 ---
 
-How do we make a list an applicative? I.e., what sort of context does a list
-represent?
+To make a list an Applicative instance, we have to decide what sort of context a
+list represents for its values, and how to combine them (via `<*>`). One way is
+just to think of them as ordered sequences of values, and for `<*>` to apply a
+function in the first list to the corresponding element in the second:
 
 > instance Applicative [] where
->   pure = undefined
+>   pure x = repeat x
 >
->   (<*>) = undefined
+>   [] <*> _ = []
+>   _ <*> [] = []
+>   (f:fs) <*> (x:xs) = f x : (fs <*> xs)
 
 Try:
 
     [(2^), (5+), (3*)] <*> [5..7]
 
 A more interesting approach would be to think of a list as representing a
-*non-deterministic context*. (What does this mean?)
+non-deterministic context --- i.e., one in which all choices are equally likely.
+To combine two lists with `<*>`, then, would mean that we have to generate all
+possible combinations of results!
 
-We can't define multiple instances of a class for a given type, so we use
-`newtype` to create a type from a list:
+We can't define multiple instances of a class for a given type, so if we want to
+define a separate Applicative instance for the list type, we have to create a
+new type based on the list. We can do this with the `newtype` keyword, which
+lets us create a type based on another with a single value constructor:
 
 > newtype NDList a = NDList [a] deriving Show
 
 Now we can make `NDList` an instance of Functor and Applicative:
 
 > instance Functor NDList where
->   fmap = undefined
+>   fmap f (NDList l) = NDList $ map f l
 >
 > instance Applicative NDList where
->   pure = undefined
+>   pure x = NDList [x]
 >
->   (<*>) = undefined
+>   NDList fs <*> NDList xs = NDList [f x | f <- fs, x <- xs]
 
 Try:
 
@@ -233,9 +245,9 @@ interpretation.
 We can also make a function an Applicative:
 
 > instance Applicative ((->) a) where
->   pure = undefined
+>   pure x = \_ -> x
 >
->   (<*>) = undefined
+>   f <*> g = \x -> (f x) (g x)
 
 What does this do?
 
@@ -275,7 +287,12 @@ What happens when we do the following?
 
     find (>100) <$> Just [1..100]
 
-What would be preferable?
+We end up with contexts within contexts ... where what we likely want is to
+somehow merge the contexts together in a meaningful way (e.g., in a `Maybe`
+Functor, `Just` represents a successful computation, so `Just (Just x)` should
+probably just be interpreted as `Just x`, and `Just Nothing` should probably
+just be `Nothing`).
+
 
 Monads
 ------
@@ -294,12 +311,21 @@ methods `>>=` ("bind"), `>>` ("sequence"), and `return`:
 >   return :: a -> m a
 >   return = pure
 
+As with the preceding classes, a Monad represents a context for computations or
+values. The `>>=` (bind) operator takes a monad and a function, applies the
+function to the value in the monad, which generates another monad, then combines
+the contexts of the two monads to produce a result.
+
+`>>` (sequence) has a default implementation built from `>>=`, and `return` is a
+synonym for `pure`.
+
 ---
 
 Let's make `Maybe` a Monad instance:
 
 > instance Monad Maybe where
->   (>>=) = undefined
+>   Nothing >>= _ = Nothing
+>   Just x >>= f = f x
 
 Now we get sensible results by doing:
 
@@ -330,14 +356,40 @@ integral operands:
 Without bind, we might write:
 
 > fDivs :: Integral a => a -> a -> a -> a -> a -> a -> Maybe a
-> fDivs a b c d e f = undefined
+> fDivs a b c d e f = case a `safeDiv` b 
+>                     of Nothing -> Nothing
+>                        Just r ->
+>                          case c `safeDiv` d 
+>                          of Nothing -> Nothing
+>                             Just r' ->
+>                               case (r + r') `safeDiv` e 
+>                               of Nothing -> Nothing
+>                                  Just r'' -> Just $ r'' * f
 
 Or we can use our bind operator:
 
 > fDivs' :: Integral a => a -> a -> a -> a -> a -> a -> Maybe a
-> fDivs' a b c d e f = undefined
+> fDivs' a b c d e f = a `safeDiv` b >>= \r ->
+>                      c `safeDiv` d >>= \r' ->
+>                      (r + r') `safeDiv` e >>= \r'' ->
+>                      Just $ r'' * f
 
-Explain how this works!
+Notice how each bind operation is followed by a lambda that is passed the value
+"inside" the preceding monad, and how each lambda itself evaluates to a monad.
+Also, note that lambda bodies extend as far towards the end of the expression as
+possible, so a fully parenthesized body of `fDivs'`` would look like this:
+
+    a `safeDiv` b >>= \r -> (
+      c `safeDiv` d >>= \r' -> (
+        (r + r') `safeDiv` e >>= \r'' -> (
+          Just $ r'' * f
+        )
+      )
+    )
+
+Finally, and perhaps most importantly, the bind operation takes care of the
+logic of chaining together multiple monadic values. In this case, it means we
+don't need to keep checking to see if any of the `saveDiv` calls failed!
 
 ---
 
@@ -350,6 +402,10 @@ syntax for doing this -- "do notation":
 >                          r'' <- (r + r') `safeDiv` e
 >                          return $ r'' * f
 
+Each line in a do block represents a monadic value, and "<-" appears to allow us
+to "extract" the contents of a monad. Behind the scenes, what's really going on
+is that the bind operator (>>=) is automatically being invoked between lines!
+
 If a line in a `do` block does not use the `<-` operator, then it and the
 following line are combined using the `>>` (sequence) operator. For example,
 translate the following `do` block to lambda notation using `>>=` and `>>`:
@@ -360,6 +416,13 @@ translate the following `do` block to lambda notation using `>>=` and `>>`:
        r3 <- func4 z
        func5 r3
        return (r1, r2, r3)
+
+    func1 x >>= \r1 ->
+    func2 y >>= \r2 ->
+    func3 r1 r2 >>
+    func4 z >>= \r3 ->
+    func5 r3 >>
+    return (r1, r2, r3)
 
 `do` blocks also support `let` definitions, but `in` is omitted, e.g.:
 

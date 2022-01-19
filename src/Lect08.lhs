@@ -65,10 +65,11 @@ functions:
 > not' No  = Yes
 >
 > (|||) :: YesOrNo -> YesOrNo -> YesOrNo
-> (|||) = undefined
+> No ||| No = No
+> _  ||| _  = Yes
 >
 > or' :: [YesOrNo] -> YesOrNo
-> or' = undefined
+> or' = foldr (|||) No
 
 ---
 
@@ -88,10 +89,10 @@ field types.
 When pattern matching, we can also deconstruct values into their fields:
 
 > boxStr :: Box -> String
-> boxStr = undefined
+> boxStr (Box _ _ s) = s
 >
 > boxCombine :: Box -> Box -> Box
-> boxCombine = undefined
+> boxCombine (Box n1 b1 s1) (Box n2 b2 s2) = Box (n1+n2) (b1||b2) (s1++s2)
 
 ---
 
@@ -101,7 +102,7 @@ E.g., `Shape` has three value constructors, each with one or more fields:
 
 > data Shape = Circle Double 
 >              | Triangle Double Double 
->              | Rectangle Double Double
+>              | Rectangle Double Double deriving Show
 
 Pattern matching lets us differentiate between different values of a given type,
 and extract their constituent fields:
@@ -184,12 +185,16 @@ Here are some `RussianDoll`s:
 Write a function to return the message in the innermost non-empty doll:
 
 > innerMostMessage :: RussianDoll -> String
-> innerMostMessage = undefined
+> innerMostMessage EmptyDoll = ""
+> innerMostMessage (RussianDoll m EmptyDoll) = m
+> innerMostMessage (RussianDoll _ d) = innerMostMessage d
 
 Write a function to reverse all messages in a doll:
 
 > reverseMessages :: RussianDoll -> RussianDoll
-> reverseMessages = undefined
+> reverseMessages EmptyDoll = EmptyDoll
+> reverseMessages (RussianDoll msg d) = RussianDoll (reverse msg) $
+>                                                   reverseMessages d
 
 
 Polymorphic Types
@@ -220,10 +225,10 @@ E.g., here are some different `UniversalBox` values:
 E.g., let's define some some functions on `UniversalBox` values:
 
 > boxStrCat :: UniversalBox String -> UniversalBox String -> UniversalBox String
-> boxStrCat = undefined
+> boxStrCat (UBox s1) (UBox s2) = UBox $ s1 ++ s2
 
 > boxComp :: Ord a => UniversalBox a -> UniversalBox a -> Ordering
-> boxComp = undefined
+> boxComp (UBox x) (UBox y) = compare x y
 
 
 We say that the `UniversalBox` type constructor has "kind" (* -> *), where *
@@ -313,13 +318,17 @@ Here are some lists:
 Let's define some list functions!
 
 > takeL :: Int -> List a -> List a
-> takeL = undefined
+> takeL 0 l = Empty
+> takeL _ Empty = Empty
+> takeL n (Cons x xs) = Cons x $ takeL (n-1) xs
 >
 > mapL :: (a -> b) -> List a -> List b
-> mapL = undefined
+> mapL _ Empty = Empty
+> mapL f (Cons x xs) = Cons (f x) $ mapL f xs
 >
 > foldrL :: (a -> b -> b) -> b -> List a -> b
-> foldrL = undefined
+> foldrL _ v Empty = v
+> foldrL f v (Cons x xs) = f x $ foldrL f v xs
 
 ---
 
@@ -357,13 +366,13 @@ To make a type an instance of a class, we need to declare it so and implement
 the requisite method(s):
 
 > instance Explosive Integer where
->   explode = undefined
+>   explode n = [n..n+10]
 >
 > instance Explosive Char where
->   explode = undefined
+>   explode c = take 10 $ enumFrom c
 >
 > instance Explosive [a] where
->   explode = undefined
+>   explode = map (:[])
 
 Now we can apply `explode` to `Integer`, `Char`, and list values. Looking at the
 output of ":t explode" in GHCi confirms that `explode` has the constrained type:
@@ -373,7 +382,7 @@ output of ":t explode" in GHCi confirms that `explode` has the constrained type:
 We can also use the class as a constraint in other functions:
 
 > blowItAllUp :: Explosive a => [a] -> [[a]]
-> blowItAllUp = undefined
+> blowItAllUp = map explode
 
 ---
 
@@ -402,7 +411,7 @@ E.g., make the `Student` type defined earlier (show below) an instance of `Eq`:
     } 
 
 > instance Eq Student where
->   (==) = undefined
+>   (Student _ _ id1 _) == (Student _ _ id2 _) = id1 == id2
 
 ---
 
@@ -436,13 +445,16 @@ need only supply either the `compare` or `<=` methods.
 E.g., make `Student` an instance of `Ord`:
 
 > instance Ord Student where
->   compare = undefined
+>   compare (Student _ _ id1 _) (Student _ _ id2 _) = compare id1 id2
 
 Making a polymorphic type an instance of a class may require adding constraints
 to the instance declaration. E.g., complete our `List` instance of `Eq`:
 
 > instance (Eq a) => Eq (List a) where
->   (==) = undefined
+>   Empty == Empty = True
+>   (Cons x xs) == (Cons y ys) = x == y && xs == ys
+>   _ == Empty = False
+>   Empty == _ = False
 
 
 -- Automatic derivation

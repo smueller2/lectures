@@ -141,6 +141,14 @@ E.g., how can we rewrite the following using `$`?
 
     take 5 (drop 10 (zip [1..] (repeat 'a')))
 
+Answer:
+
+    sayHiTo $ "Michael" ++ "Lee"
+
+    show $ abs $ 2 - 5
+
+    take 5 $ drop 10 $ zip [1..1] $ repeat 'a'
+
 
 Function composition
 --------------------
@@ -156,6 +164,7 @@ the result of applying the second. It is defined thusly:
 `.` lets us succinctly combine functions:
 
     (sqrt . sin) 1
+
     (take 10 . repeat) 5
 
 
@@ -165,6 +174,7 @@ E.g., re-implement `even'`, `k2h`, and `strip` with `.`
 
 > even' :: Integral a => a -> Bool
 > even' x = (x `rem` 2) == 0
+> even''  = (== 0) . (`rem` 2)
 >
 >
 > k2c k = k - 273
@@ -176,10 +186,13 @@ E.g., re-implement `even'`, `k2h`, and `strip` with `.`
 >
 >
 > k2h  k = f2h $ c2f $ k2c k
+> k2h'   = f2h . c2f . k2c
 >
 >
 > strip :: String -> String
 > strip s = reverse $ dropWhile isSpace $ reverse $ dropWhile isSpace s
+> strip'  = f . f
+>    where f = reverse . dropWhile isSpace
 
 
 `.` also often does away with the need to create lambdas. 
@@ -187,6 +200,10 @@ E.g., re-implement `even'`, `k2h`, and `strip` with `.`
 E.g., how can we do away with the lambdas in the following?
 
     dropWhile (\w -> length w > 3) $ words "hello there, how are you?"
+
+Answer:
+
+    dropWhile ((> 3) . length) $ words "hello there, how are you?"
 
 
 Map
@@ -217,7 +234,8 @@ Try out:
 Implement `map` ourselves:
 
 > map' :: (a -> b) -> [a] -> [b]
-> map' = undefined
+> map' _ [] = []
+> map' f (x:xs) = f x : map' f xs
 
 
 `map` generalizes a particular pattern often seen in recursive functions that
@@ -255,7 +273,9 @@ Try out:
 Implement `filter` ourselves:
 
 > filter' :: (a -> Bool) -> [a] -> [a]
-> filter' = undefined
+> filter' _ [] = []
+> filter' p (x:xs) | p x = x : filter' p xs
+>                  | otherwise = filter' p xs
 
 
 `filter` generalizes yet another pattern seen in recursive list-processing
@@ -272,16 +292,19 @@ many other data types, as we'll discover). The pattern represented by fold is so
 general, in fact, that it can be used to implement *every primitive recursive
 function* on lists. 
 
-To see the pattern in action before we abstract it, implement the following:
+To see the pattern in action before we abstract it, consider:
 
 > sum' :: (Num a) => [a] -> a
-> sum' = undefined
+> sum' [] = 0
+> sum' (x:xs) = (+) x $ sum' xs
 >
 > and' :: [Bool] -> Bool
-> and' = undefined
+> and' [] = True
+> and' (x:xs) = (&&) x $ and' xs
 > 
 > concat' :: [[a]] -> [a]
-> concat' = undefined
+> concat' [] = []
+> concat' (x:xs) = (++) x $ concat' xs
 
 
 Each of the above recursive functions has some type `[a] -> b`, and is built
@@ -302,7 +325,8 @@ I.e., to express a recursive list function of this type, we need:
 Let's design a HOF that encapsulates this notion of primitive list recursion:
 
 > recur :: (a -> b -> b) -> b -> [a] -> b
-> recur = undefined
+> recur _ v [] = v
+> recur f v (x:xs) = f x $ recur f v xs
 
 
 This is our first fold --- specifically, the "right fold".
@@ -326,57 +350,80 @@ E.g., trace out the call `foldr (+) 0 [1..5]`:
 
     foldr (+) 0 (1 : (2 : (3 : (4 : (5 : [])))))
 
-    = ?
+    = 1 + foldr (+) 0 (2 : (3 : (4 : (5 : []))))
+
+    = 1 + (2 + foldr (+) 0 (3 : (4 : (5 : []))))
+
+    = 1 + (2 + (3 + foldr (+) 0 (4 : (5 : []))))
+
+    = 1 + (2 + (3 + (4 + foldr (+) 0 (5 : []))))
+
+    = 1 + (2 + (3 + (4 + (5 + foldr (+) 0 []))))
+
+    = 1 + (2 + (3 + (4 + (5 + 0))))
+
+    = 1 + (2 + (3 + (4 + 5)))
+
+    = 1 + (2 + (3 + 9))
+
+    = 1 + (2 + 12)
+
+    = 1 + 14
+
+    = 15
 
 Note that foldr is inherently right-associative.
 
 Let's define some simple recursive functions in terms of foldr:
 
 > sum'' :: (Num a) => [a] -> a
-> sum'' = undefined
+> sum'' = foldr (+) 0
 > 
 > product'' :: (Num a) => [a] -> a
-> product'' = undefined
+> product'' = foldr (*) 1
 >
 > and'' :: [Bool] -> Bool
-> and'' = undefined
+> and'' = foldr (&&) True
 > 
 > or'' :: [Bool] -> Bool
-> or'' = undefined
+> or'' = foldr (||) False
 >
 > concat'' :: [[a]] -> [a]
-> concat'' = undefined
+> concat'' = foldr (++) []
 >
 > stringify' :: (Show a) => [a] -> String
-> stringify' = undefined
+> stringify' = foldr ((++) . show) ""
 >
 > (+++) :: [a] -> [a] -> [a]
-> l1 +++ l2 = undefined
+> l1 +++ l2 = foldr (:) l2 l1
 >
 > length' :: [a] -> Int
-> length' = undefined
+> length' = foldr (\_ l -> (+1) l) 0
 
 And higher order functions:
 
 > map'' :: (a -> b) -> [a] -> [b]
-> map'' f = undefined
+> map'' f = foldr ((:) . f) []
 >
 > filter'' :: (a -> Bool) -> [a] -> [a]
-> filter'' f = undefined
+> filter'' f = foldr iter []
+>   where iter x rst | f x = x : rst
+>                    | otherwise = rst
 
 
 Sometimes it makes sense to perform a right fold where the base-case value is
 just the last value in the list. Let's implement this version:
 
 > foldr1 :: (a -> a -> a) -> [a] -> a
-> foldr1 = undefined
+> foldr1 _ [x] = x
+> foldr1 f (x:xs) = f x $ foldr1 f xs
 
 
 This allows us to easily "reduce" a list using a combining function. E.g.,
 
-> sum''' = undefined
+> sum''' = foldr1 (+)
 >
-> product''' = undefined
+> product''' = foldr1 (*)
 
 
 -- Left fold
@@ -398,29 +445,49 @@ Here are recursive functions written in the left associative, accumulator style:
 
 > sumL :: (Num a) => a -> [a] -> a
 > sumL v [] = v
-> sumL v (x:xs) = undefined
+> sumL v (x:xs) = sumL (v + x) xs
 >
 > andL :: Bool -> [Bool] -> Bool
 > andL v [] = v
-> andL v (x:xs) = undefined
+> andL v (x:xs) = andL (v && x) xs
 > 
 > concatL :: [a] -> [[a]] -> [a]
 > concatL v [] = v
-> concatL v (x:xs) = undefined
+> concatL v (x:xs) = concatL (v ++ x) xs
 
 
 Let's extract the pattern and define `foldl`:
 
 > foldl :: (b -> a -> b) -> b -> [a] -> b
-> foldl f v [] = undefined
-> foldl f v (x:xs) = undefined
+> foldl _ v [] = v
+> foldl f v (x:xs) = foldl f (f v x) xs
 
 
 E.g. trace out the call `foldl (+) 0 [1..5]`:
 
     foldl (+) 0 (1 : (2 : (3 : (4 : (5 : [])))))
 
-  = ?
+  = foldl (+) (0 + 1) (2 : (3 : (4 : (5 : []))))
+
+  = foldl (+) ((0 + 1) + 2) (3 : (4 : (5 : [])))
+
+  = foldl (+) (((0 + 1) + 2) + 3) (4 : (5 : []))
+
+  = foldl (+) ((((0 + 1) + 2) + 3) + 4) (5 : [])
+
+  = foldl (+) (((((0 + 1) + 2) + 3) + 4) + 5) []
+
+  = (((((0 + 1) + 2) + 3) + 4) + 5)
+
+  = ((((1 + 2) + 3) + 4) + 5)
+
+  = (((3 + 3) + 4) + 5)
+
+  = ((6 + 4) + 5)
+  
+  = (10 + 5)
+  
+  = 15
 
 ---
 
@@ -438,6 +505,7 @@ evaluated later on. E.g.,
     = foldl f (f (f (f v 1) 2) 3) [4..N]
 
     = (f (f ... (f (f (f (f v 1) 2) 3) 4) ...) N)
+
 
 When the accumulated result needs to be evaluated all at once, this can cause
 problems. E.g., try:
@@ -503,7 +571,7 @@ Additionally, the accumulator pattern built in to foldl allows us to implement
 functions like reverse more efficiently:
 
 > reverse' :: [a] -> [a]
-> reverse' = undefined
+> reverse' = foldl (flip (:)) []
 
 
 -- On infinite lists
@@ -518,7 +586,8 @@ Try:
 
     foldl (||) False $ map even [1..]
 
----
+
+Right folds can work with infinite lists; left folds can not!
 
 Why?
 
