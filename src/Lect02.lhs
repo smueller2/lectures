@@ -1,6 +1,7 @@
 % CS 340: Programming Paradigms and Patterns
 % Lect 02 - Types and Type Classes
 % Michael Lee edited by sarah
+% lol dope you did a git pull and now you have this comment
 
 > module Lect02 where
 > import Data.Char 
