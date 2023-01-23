@@ -1,6 +1,6 @@
 % CS 340: Programming Paradigms and Patterns
 % Lect 02 - Types and Type Classes
-% Michael Lee edited my sarah
+% Michael Lee edited by sarah
 
 > module Lect02 where
 > import Data.Char 
