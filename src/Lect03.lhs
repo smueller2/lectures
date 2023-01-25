@@ -1,6 +1,6 @@
 % CS 340: Programming Paradigms and Patterns
 % Lect 03 - Functions
-% Michael Lee
+% Michael Lee 
 
 > module Lect03 where
 > import Data.Char
