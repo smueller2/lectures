@@ -3,6 +3,7 @@
 % Michael Lee
 
 > module Lect03 where
+> import Data.Char
 
 Functions
 =========
@@ -21,164 +22,204 @@ Agenda:
 Defining Functions
 ------------------
 
-A named, top-level function definition starts with its name, is followed by its
-parameter list (separated by spaces), then `=`, then an expression which will 
-be evaluated to determine its result.
+Functions are defined with one or more equations. You should always include a type signature declaration alongside a function definition.
 
-By convention, we always include type declarations for functions.
+E.g., define the following functions:
+  - nand (Boolean not-and)
+  - c2f (convert Celsius to Fahrenheit)
+  - distance (Euclidean distance between two points)
 
 > nand :: Bool -> Bool -> Bool
-> nand a b = not (a && b)
+> nand x y = not (x && y)
 >
+> c2f :: (Floating a) => a -> a
+> c2f c = c * 9 / 5 + 32
 >
-> discriminant :: Num a => a -> a -> a -> a
-> discriminant a b c = b^2 - 4*a*c
->
->
-> c2f :: Fractional a => a -> a
-> c2f c = c * 9/5 + 32
- 
+> distance :: (Floating a) => (a, a) -> (a, a) -> a
+> distance p1 p2 = sqrt ((fst p1 - fst p2)^2 + (snd p1 - snd p2)^2)
+
 
 -- Pattern matching
 
-We can provide multiple alternative expressions to be evaluated when a function
-is called, which are differentiated based on *patterns* that are matched against
-the parameter values. Patterns are matched in order (top to bottom); only the
-first pattern to match has its corresponding expression evaluated.
+Instead of using a variable in a function definition, we can use a *pattern* to match against the parameter value.
+
+E.g., define `not` using pattern matching:
 
 > not' :: Bool -> Bool
 > not' True = False
 > not' False = True
 
 
-A catch-all pattern, where a variable is specified instead of a data value, can 
-be used to match parameters not specified in earlier patterns.
+Patterns are matched top down. A variable can be used as a "catch-all" pattern.
+
+E.g., define `fib` (to return the nth Fibonacci number ) using pattern matching:
 
 > fib :: Integer -> Integer
-> fib 0 = 1
+> fib 0 = 0
 > fib 1 = 1
 > fib n = fib (n-1) + fib (n-2)
 
 
-We can also use the wildcard pattern `_` to match on one or more values we don't
-care about.
+E.g., define `greet`, which returns an opinionated greeting:
+
+> greet :: String -> String
+> greet "Michael" = "Hey, old friend!"
+> greet "Jane" = "Yo, Jane-o"
+> greet name = "Hello, " ++ name
+
+
+Sometimes we don't care about the value of a parameter. We use `_` as the matching variable name to indicate this.
+
+E.g., define `nand` again using pattern matching:
 
 > nand' :: Bool -> Bool -> Bool
-> nand' True True = False
-> nand' _    _    = True
+> nand' False False = True
+> nand' _ _ = False
 
 
-Patterns can also be used to "deconstruct" values. E.g., for tuples:
+Patterns can also be used to "deconstruct" values. 
+
+E.g., define `fst` and `snd` using pattern matching:
 
 > fst' :: (a,b) -> a
 > fst' (x,_) = x
 >
-> 
-> distance :: (Floating a, Eq a) => (a,a) -> (a,a) -> a
-> distance (x1,y1) (x2,y2) = sqrt ((x1-x2)^2 + (y1-y2)^2)
->
->
-> mapTup :: (a -> b) -> (a,a) -> (b,b)
+> snd' :: (a,b) -> b
+> snd' (_,y) = y
+
+
+E.g., redefine `distance` using pattern matching:
+
+> distance' :: (Floating a) => (a, a) -> (a, a) -> a
+> distance' (x1,y1) (x2,y2) = sqrt ((x1-x2)^2 + (y1-y2)^2)
+
+
+E.g., define the `mapTup` function using pattern matching:
+
+> mapTup :: (a -> b) -> (a, a) -> (b, b)
 > mapTup f (x,y) = (f x, f y)
+
+
+As-patterns can be used to bind a variable to a sub-pattern.
+
+E.g., implement the (very contrived) function `foo`:
+
+> foo :: (a, (b, c)) -> ((a, (b, c)), (b, c), (a, b, c))
+> foo p@(x, q@(y, z)) = (p, q, (x, y, z))
 
 
 -- Guards
 
-Boolean expressions can be used to provide more granular *guards* for separate
-equations in a function definition. The `otherwise` keyword (which is just 
-`True` in disguise) can be used to provide a catch-all equation.
+Boolean "guards" can be used to select between multiple right-hand-sides in a single function equation (`otherwise` designates the default).
+
+E.g., redefine `fib` using guards. Is it any clearer?
 
 > fib' :: Integer -> Integer
 > fib' n | n == 0 = 0
 >        | n == 1 = 1
 >        | otherwise = fib' (n-1) + fib' (n-2)
->
->
-> c2h :: (Floating a, Ord a) => a -> String
-> c2h c | c2f c < 0   = "too cold"
->       | c2f c > 100 = "too hot"
->       | otherwise   = "tolerable"
->
->
-> quadRoots :: (Floating a, Ord a) => a -> a -> a -> (a, a)
-> quadRoots a b c 
->   | discriminant a b c >= 0 = ((-b + sqrt (discriminant a b c)) / (2*a),
->                                (-b - sqrt (discriminant a b c)) / (2*a))
->   | otherwise = error "No real roots"
 
+E.g., define `c2h`, which converts Celsius to a "human readable" string:
+
+> c2h :: (Floating a, Ord a) => a -> String
+> c2h c | c2f c >= 100 = "hot"
+>       | c2f c >= 70  = "comfortable"
+>       | c2f c >= 50  = "cool"
+>       | otherwise    = "cold"
+
+E.g., define `quadrant` which returns the quadrant of a point:
+
+> quadrant :: (Num a, Ord a) => (a, a) -> Int
+> quadrant (x, y) | x > 0 && y > 0 = 1
+>                 | x < 0 && y > 0 = 2
+>                 | x < 0 && y < 0 = 3
+>                 | x > 0 && y < 0 = 4
+>                 | otherwise = 0
 
 -- `where` clause
 
-A `where` clause lets us introduce new local bindings (vars or functions) in a 
-given function definition (which may span multiple guards, but *not* separate 
-top-level patterns). Note that we read the `|` symbol as "such that".
+A `where` clause lets us create a local binding for a var or function.
 
-> quadRoots' :: (Floating a, Ord a) => a -> a -> a -> (a, a)
-> quadRoots' a b c 
->     | d >= 0 = ((-b + sqrt_d) / (2*a), (-b - sqrt_d) / (2*a))
->     | otherwise = error "No real roots"
->   where disc a b c = b^2 - 4*a*c
->         d          = disc a b c
->         sqrt_d     = sqrt d
+E.g., redefine `c2h` using a `where` clause:
+
+> c2h' :: (Floating a, Ord a) => a -> String
+> c2h' c | f >= 100 = "hot"
+>        | f >= 70  = "comfortable"
+>        | f >= 50  = "cool"
+>        | otherwise    = "cold"
+>       where f = c2f c
 
 
 Some useful language constructs
 -------------------------------
 
-An important note about the following constructs: they are all used to create
-*expressions* --- i.e., they evaluate to values (which must have a consistent,
-static type regardless of the evaluation path). They are not statements!
+Note: all the constructs in this section define *expressions* --- i.e., each evaluates to a value (which must have a consistent, static type). They are not statements!
 
 
--- `if-else` expressions
+-- `if-then-else` expressions
 
-The classic conditional (but both paths must exist, and must also evaluate to 
-the same type!)
+Syntax:
 
-> -- try:
-> -- oneOrOther n = if n < 0 then True else "False"
->
->
-> fib'' :: Integer -> Integer
-> fib'' n = if n <= 1 
->           then 1 
->           else fib'' (n-1) + fib'' (n-2)
+    if e1 then e2 else e3
+
+
+What's wrong with:
+
+    if n < 0 then True else "False"
+
+
+E.g., define `closer` which returns the point closest to a source point:
+
+> closer :: (Floating a, Ord a) => (a, a) -> (a, a) -> (a, a) -> (a, a)
+> closer src dst1 dst2 = if d1 < d2 then dst1 else dst2
+>   where d1 = distance src dst1
+>         d2 = distance src dst2
 
 
 -- `case` expressions
 
-`case` expressions allow us to perform pattern matching --- just as we can 
-across top-level function definitions --- on an arbitrary expression. Patterns
-can also be followed by guards!
+`case` expressions are general pattern-matching forms.
 
-> greet :: String -> String
-> greet name = "Hello" ++ 
->              case name of "Michael" -> " and welcome!"
->                           "Tom"     -> " friend."
->                           "Harry"   -> " vague acquaintance."
->                           name | null name -> " nobody."
->                                | otherwise -> " stranger."
->              ++ " How are you?"
+Syntax:
+
+    case exp of pat_1 -> e_1
+                pat_2 -> e_2
+                ...
+                pat_n -> e_n
+
+An `if-then-else` expression is just a special form of `case`:
+
+    if e1 then e2 else e3 === case e1 of True  -> e2
+                                         False -> e3
+
+All result expressions must have the same type!
+
+E.g., define `quadrantNames` which returns the name of a quadrant:
+
+> quadrantNames :: (Int, Int) -> String
+> quadrantNames (x, y) = case quadrant (x, y) of 1 -> "All"
+>                                                2 -> "Science"
+>                                                3 -> "Teachers"
+>                                                4 -> "Crazy"
+>                                                _ -> "Origin"
 
 
 -- `let-in` expressions
 
-Similar to a `where` clause, the `let` keyword allows us to create new 
-bindings, but only usable within the expression following the `in` keyword.
-The entire `let-in` construct is also an *expression* --- it evaluates to the
-value of the expression following `in`.
+`let` creates local bindings (for vars/fns) for the expression following `in`. These bindings can also perform pattern matching!
 
-> quadRoots'' :: (Floating a, Ord a) => a -> a -> a -> (a, a)
-> quadRoots'' a b c = let disc a b c = b^2 + 4*a*c
->                         d          = disc a b c
->                         sqrt_d     = sqrt d
->                     in if d >= 0 
->                        then ((-b + sqrt_d) / (2*a), (-b - sqrt_d) / (2*a))
->                        else error "No real roots"
->
->
-> dist2h :: (Floating a, Ord a, Show a) => (a,a) -> String
-> dist2h p = "The distance is " ++
->            let (x,y) = p
->                d = sqrt (x^2 + y^2)
->            in if d > 100 then "too far" else show d
+Syntax:
+
+    let pat_1 = e_1
+        pat_2 = e_2
+        ...
+        pat_n = e_n
+    in e
+
+E.g., define `quadRoots` which returns the roots of a quadratic equation:
+
+> quadRoots :: Double -> Double -> Double -> (Double, Double)
+> quadRoots a b c = let disc = a^2 - 4*a*c
+>                       x1 = (-b + sqrt disc) / (2*a)
+>                       x2 = (-b - sqrt disc) / (2*a)
+>                   in (x1, x2)
